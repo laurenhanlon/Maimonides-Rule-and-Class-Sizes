@@ -1,0 +1,865 @@
+---
+title: "Stat 133 Final Report: Using Maimonides' Rule to Estimate the Effect of Class Size on Scholastic Achievement"
+author: "Lauren Hanlon, Nadav Tadelis, Daniel Saedi"
+output: pdf_document
+---
+
+```{r}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+```
+
+```{r packages}
+
+# Required packages for this section
+
+library('stargazer')
+library('lmtest')
+library('multiwayvcov')
+library('texreg')
+library('lmtest')
+library('sandwich')
+library('AER')
+
+```
+
+```{r, echo = FALSE}
+
+dir <- "../data/"
+setwd(dir)
+
+data4 <- read.csv("final4.csv", header = TRUE)
+data5 <- read.csv("final5.csv", header = TRUE)
+
+data4 <- data4[-(1:2)]
+data5 <- data5[-(1:2)]
+```
+
+## Introduction
+
+The goal of this project is twofold. First, to expand our knowledge of statistical tools in R and their potential applications to academic data. Second, to check the reproducibility of Joshua D. Angrist and Victor Lavy's 1999 paper 'Using Maimonides Rule to Estimate the Effect of Class Size on Scholastic Achievement' by re-running the paper's regression models in R (compared to thier original analysis which was done in Stata).
+This is possible because the data used in the paper is publibly posted along with some of the Stata .do files (which were used as reference for the data cleaning) and the models used in the paper are explained in detail.
+
+## First Contact
+
+The raw data that Angrist and Lavy post online are posted in .dta format, which R cannot read. In order to make the raw data readable we use the package Rio to import the .dta data into a .cvs file.
+
+## Data Cleaning
+
+We clean the data by removing or adjusting all impossible observations (scores over 100%, or schools with no test results), this was done in accordance to Angrist and Lavy's data cleaning. Additionally, we remove the observations with NA's in our regressor variables (the variables we use as regressors later in the project); this is necessary because in order to calculate clustered standard errors (see `robust.se` function in the data analysis R script in the code folder of the project) the variables need to be equal in length, otherwise `tapply` returns an error.
+
+We then saved the clean data to our data folder in .csv format.
+
+## Describing the data
+
+Our cleaned data frames for 5th and 4th graders have 50 columns and 2019 and 2049 rows, respectively. The rows correspond to the number of schools that were observed for this study. Column names correspond to variables that were measured. Variable definitions are as follows (as defined by Angrist and Lavy): Class size = number of students in the spring. Enrollment = September grade enrollment, Percent disadvantaged = percent of studetns in the school from "disadvantaged backgrounds," Reading size = number of students who took the reading test, Math size = number of students who took the math test, Average verbal = average composite reading score in the class, Average math = average composite math score in the class.
+
+We created a discontinuity sample which includes enrollment 36-45, 76-85 and 116-124. This data is used throughout the project.
+
+
+# TABLE I
+## Unweighted Descriptive Statistics
+
+Table I gives an insight into general statistics about the data. We created tables for the full samples of 5th and 4th grade as well as tables for the discontinuous samples of 5th and 4th grade. The tables are as follows:
+Full sample 5th grade (2019 classes, 1002 schools, tested in 1991)
+Full sample 4th grade (2049 classes, 1013 schools, tested in 1991)
++/- 5 Discontinuity sample 5th grade (471 classes, 224 schools)
++/- 5 Discontinuity sample 4th grade (415 classes, 195 schools)
+
+The table gives data on class size, enrollment, percent disadvantaged, reading size, math size, average verbal score and average math score. The table displays the mean, standard deviation, min, max and quantiles for each variable.
+
+### A. Full Sample
+
+```{r, echo = FALSE}
+
+library('stargazer')
+
+# subset important/relevant data
+
+subset_data5 <- data5[c("classize", "c_size", "tip_a", "verbsize", "mathsize",
+                        "avgverb", "avgmath")]
+subset_data4 <- data4[c("classize", "c_size", "tip_a", "verbsize", "mathsize",
+                        "avgverb", "avgmath")]
+
+# function to write a table displaying summary statistics
+
+summary_statistics <- function(data, grade){
+  classes <- nrow(data)
+  schools <- length(unique(data$schlcode))
+  stargazer(data, nobs = FALSE, mean.sd = TRUE, iqr = TRUE, type = "latex",
+          median = TRUE, title = paste("Unweighted Descriptive Statistics for", grade, "Grade: ", classes, " classes, ", schools, " schools, tested in 1991"),
+          covariate.labels = c("Class size", "Enrollment", "Percent disadvantaged", "Reading size", "Math size", "Average verbal", "Average math"))
+}
+
+summary_statistics(subset_data5, "5th")
+
+summary_statistics(subset_data4, "4th")
+
+```
+
+### B. +/- 5 Discontinuity Sample
+
+```{r, echo = FALSE}
+
+### CREATING THE DISCONTINUITY SAMPLE:
+
+discontinuity <- function(full_sample){
+  full_sample <- subset(full_sample, full_sample$c_size>=36 & full_sample$c_size<=45 | full_sample$c_size>=76 & full_sample$c_size<=85 | full_sample$c_size>=116 & full_sample$c_size<=125)
+}
+
+discontinuity5 <- discontinuity(data5)
+#dim(discontinuity5)
+
+discontinuity4 <- discontinuity(data4)
+#dim(discontinuity4)
+
+# such that one of the regressors is expected_classize(enrollment) is one of the regressors
+
+# and for the +/- 3 discontinuity:
+
+discontinuity3 <- function(full_sample){
+  full_sample <- subset(full_sample, full_sample$c_size>=38 & full_sample$c_size<=43 | full_sample$c_size>=78 & full_sample$c_size<=83 | full_sample$c_size>=118 & full_sample$c_size<=123)
+}
+
+discontinuity5_three <- discontinuity3(data5)
+#dim(discontinuity5_three)
+
+discontinuity4_three <- discontinuity3(data4)
+#dim(discontinuity4_three)
+
+### Creating the Table
+
+discontinuity_subset_data5 <- discontinuity5[c("classize", "c_size", "tip_a", "verbsize", "mathsize",
+                        "avgverb", "avgmath")]
+
+discontinuity_subset_data4 <- discontinuity4[c("classize", "c_size", "tip_a", "verbsize", "mathsize",
+                        "avgverb", "avgmath")]
+
+### Table
+
+summary_statistics(discontinuity_subset_data5, "5th")
+
+summary_statistics(discontinuity_subset_data4, "4th")
+
+```
+
+## Class Size in 1991 in Initial Enrollment Count, Actual Average Size and as Predicted by Maimonides' Rule
+
+The graph we created compares average class size per enrollment category to expected enrollment according to Maimonides Rule. It shows that the class size behavior (with respect to enrollment) does approximately follow the discontinuous model of the Maimonides' Rule
+
+
+```{r, echo = FALSE}
+
+library(ggplot2)
+
+#Create a function to create vectors of expected class sizes according to Maiomedes rule 
+
+expected_classize <- function(enrollment) {
+  y <- c()
+  for (i in 1:length(enrollment)) {
+    denominator <- as.integer((enrollment[i] - 1) / 40) + 1
+    y[i] <- enrollment[i] / denominator
+  }
+  y
+}
+
+#Create a vector of average class size per enrollment category
+
+enrollment5 <- (min(data5$c_size):max(data5$c_size))
+expected_enrollment5 <- expected_classize(enrollment5)
+avg_class5 <- aggregate(data=data5,x=data5$classize,by=list(data5$c_size),FUN=mean)
+
+#Plot for 5th Grade Average Class Size
+
+df_5thgrade<-data.frame(expected_enrollment5,enrollment5)
+cols <- c("Maimonides Rule"="#000099","Actual Enrollment"="black")
+avg_class5_plot <- ggplot() + 
+  geom_line(data=avg_class5,aes(x=avg_class5[[1]],y=avg_class5[[2]],
+            color="Actual Enrollment")) +
+  geom_line(data=df_5thgrade,aes(x=enrollment5,y=expected_enrollment5,
+            color="Maimonides Rule"),
+            linetype="dashed") + 
+  ylab("Class Size") + 
+  xlab("Enrollment") + 
+  ggtitle("Fifth Grade Class Sizes") + 
+  scale_colour_manual(name="",values=cols)
+  theme(plot.title = element_text(size=12, face="bold"))
+print(avg_class5_plot)
+
+# save to images
+png("~/stat133final/images/Average_5th_plot.png")
+plot(avg_class5_plot)
+dev.off()
+
+
+#Create a vector of average class size per enrollment category
+
+enrollment4 <- (min(data4$c_size):max(data4$c_size))
+expected_enrollment4 <- expected_classize(enrollment4)
+avg_class4 <- aggregate(data=data4, x=data4$classize, by=list(data4$c_size), FUN=mean)
+
+#Plot for 4th Grade Average Class Size 
+
+df_4thgrade <- data.frame(expected_enrollment4,enrollment4)
+cols <- c("Maimonides Rule"="#000099","Actual Enrollment"="black")
+avg_class4_plot <- ggplot() + 
+  geom_line(data=avg_class4,aes(x=avg_class4[[1]],y=avg_class4[[2]],
+            colour="Actual Enrollment")) +
+  geom_line(data=df_4thgrade,aes(x=enrollment4,y=expected_enrollment4,
+                        colour="Maimonides Rule"), 
+                        linetype="dashed") + 
+  ylab("Class Size") + xlab("Enrollment") + 
+  ggtitle("Fourth Grade Class Sizes") + 
+  theme(plot.title = element_text(size=12, face= "bold")) + 
+  scale_colour_manual(name="",values=cols)
+print(avg_class4_plot)
+
+# save to images
+png("~/stat133final/images/Average_4th_plot.png")
+plot(avg_class4_plot)
+dev.off()
+
+```
+
+# TABLE II
+## OLS Estimates for 1991
+
+This is  a preliminary OLS estimate of some of the variables of interest in the data. It shows that by controlling for percent disadvantaged and total enrollment, any positive correlation between class size and test scores is eliminated, and all of the coeffecients on classize are negative. Thus suggesting that as class sizes increase, test scores decrease.
+
+```{r, echo = FALSE}
+
+### REGRESSION INFO
+
+# The `tipuach` variable is PD (percent disadvantaged) which is one of the main control variables
+
+# The `schlcode` variable is the variable we are clustering by because we are clustering to correct the SE's for intraschool correlations (similarities of classes within the same school)
+
+# We need to use a regression command that allows for clustering
+
+library('lmtest')
+library('multiwayvcov')
+
+# Making the regression models
+
+### TABLE
+
+# The table is made up of 3 models run on 4 different variables for Y
+
+num_entries <- 1:8
+table2 <- data.frame(num_entries)
+
+#Column 1
+table2_col1_model <- lm(data5$avgverb ~ data5$classize)
+
+#Column 2
+table2_col2_model <- lm(data5$avgverb ~ data5$classize + data5$tipuach)
+
+#Column 3
+table2_col3_model <- lm(data5$avgverb ~ data5$classize + data5$tipuach + data5$c_size)
+
+#Column 4
+table2_col4_model <- lm(data5$avgmath ~ data5$classize)
+
+#Column 5
+table2_col5_model <- lm(data5$avgmath ~ data5$classize + data5$tipuach)
+
+#Column 6
+table2_col6_model <- lm(data5$avgmath ~ data5$classize + data5$tipuach + data5$c_size)
+
+#Column 7
+table2_col7_model <- lm(data4$avgverb ~ data4$classize)
+
+#Column 8
+table2_col8_model <- lm(data4$avgverb ~ data4$classize + data4$tipuach)
+
+#Column 9
+table2_col9_model <- lm(data4$avgverb ~ data4$classize + data4$tipuach + data4$c_size)
+
+#Column 10
+table2_col10_model <- lm(data4$avgmath ~ data4$classize)
+
+#Column 11
+table2_col11_model <- lm(data4$avgmath ~ data4$classize + data4$tipuach)
+
+#Column 12
+table2_col12_model <- lm(data4$avgmath ~ data4$classize + data4$tipuach + data4$c_size)
+
+
+
+### FUNCTION TO CORRECT STANDARD ERRORS FOR CLUSTERING (clustering to control for correlated intraschool error terms)
+
+library('texreg')
+library('lmtest')
+library('sandwich')
+
+robust.se <- function(model, cluster){
+  require(sandwich)
+  require(lmtest)
+  M <- length(unique(cluster))
+  N <- length(cluster)
+  K <- model$rank
+  dfc <- (M/(M - 1)) * ((N - 1)/(N - K))
+  uj <- apply(estfun(model), 2, function(x) tapply(x, cluster, sum));
+  rcse.cov <- dfc * sandwich(model, meat = crossprod(uj)/N)
+  rcse.se <- coeftest(model, rcse.cov)
+  return(list(rcse.cov, rcse.se))
+}
+
+### CREATING THE VARIABLES TO REPLACE DEFAULT STANDARD ERRORS
+
+table2_col1_se <- robust.se(table2_col1_model, data5$schlcode)[[2]]
+table2_col2_se <- robust.se(table2_col2_model, data5$schlcode)[[2]]
+table2_col3_se <- robust.se(table2_col3_model, data5$schlcode)[[2]]
+table2_col4_se <- robust.se(table2_col4_model, data5$schlcode)[[2]]
+table2_col5_se <- robust.se(table2_col5_model, data5$schlcode)[[2]]
+table2_col6_se <- robust.se(table2_col6_model, data5$schlcode)[[2]]
+table2_col7_se <- robust.se(table2_col7_model, data4$schlcode)[[2]]
+table2_col8_se <- robust.se(table2_col8_model, data4$schlcode)[[2]]
+table2_col9_se <- robust.se(table2_col9_model, data4$schlcode)[[2]]
+table2_col10_se <- robust.se(table2_col10_model, data4$schlcode)[[2]]
+table2_col11_se <- robust.se(table2_col11_model, data4$schlcode)[[2]]
+table2_col12_se <- robust.se(table2_col12_model, data4$schlcode)[[2]]
+
+### CREATING THE GRAPHIC REPRESENTATION
+
+TableII_5th <- texreg(list(table2_col1_model, table2_col2_model, table2_col3_model, table2_col4_model, table2_col5_model, table2_col6_model),
+  table = TRUE,
+  caption.above = TRUE,
+  caption ="OLS estimates for 1991 5th grade",
+  custom.note="rc := reading comprehension, m := math",
+  dcolumn=FALSE,
+  digits=3,
+  stars = numeric(0),
+  custom.model.names=c("rc5.1","rc5.2", "rc.3", "m5.1","m5.2", "m5.3"),
+  custom.coef.names = c(NA, "Class size", "Percent Disadvantaged", "Enrollment"),
+  override.se=list(table2_col1_se[,2],
+                        table2_col2_se[,2],
+                        table2_col3_se[,2],
+                        table2_col4_se[,2],
+                        table2_col5_se[,2],
+                        table2_col6_se[,2]),
+       override.pval=list(table2_col1_se[,4],
+                        table2_col2_se[,4],
+                        table2_col3_se[,4],
+                        table2_col4_se[,4],
+                        table2_col5_se[,4],
+                        table2_col6_se[,4]),
+       omit.coef = 'Intercept')
+print(TableII_5th)
+
+# output of this, put into latex
+
+TableII_4th <- texreg(list(table2_col7_model, table2_col8_model, table2_col9_model, table2_col10_model, table2_col11_model, table2_col12_model),
+  table = TRUE,
+  caption.above = TRUE,
+  caption ="OLS estimates for 1991 4th grade",
+  custom.note="rc := reading comprehension, m := math",
+  custom.coef.names = c(NA, "Class size", "Percent Disadvantaged", "Enrollment"),
+  dcolumn=FALSE,
+  digits=3,
+  stars = numeric(0),
+  custom.model.names=c("rc5.1","rc5.2", "rc.3", "m5.1","m5.2", "m5.3"),
+  override.se=list(table2_col7_se[,2],
+                        table2_col8_se[,2],
+                        table2_col9_se[,2],
+                        table2_col10_se[,2],
+                        table2_col11_se[,2],
+                        table2_col12_se[,2]),
+       override.pval=list(table2_col7_se[,4],
+                        table2_col8_se[,4],
+                        table2_col9_se[,4],
+                        table2_col10_se[,4],
+                        table2_col11_se[,4],
+                        table2_col12_se[,4]),
+       omit.coef = 'Intercept')
+
+print(TableII_4th)
+
+
+```
+
+# TABLE III
+## Reduced-Form Estimates for 1991
+### Expected Class Size, Dependent on Enrollment
+
+This table has two important improvements over the last table. We include a variable for expected class size, which is the class size that the Maimonides' Rule returns for a given enrollment level. Additionally we run the regressions on a discontinuous sample; the discontinous sample is made by only including the schools that have enrollment levels on the threshold of Maimonides' suggested class additions. This checks the sensitivity/accuracy of the estimates by focusing on the edge cases.
+
+```{r}
+
+### REGRESSION INFO
+# The `tipuach` variable is PD (percent disadvantaged) which is one of the main control variables
+# The `schlcode` variable is the variable we are clustering by because we are clustering to correct the SE's for intraschool correlations (similarities of classes within the same school)
+# The f_sc function in the paper is defined by f_sc = enrollment / (integer[(enrollment - 1) / 40) + 1] for a specified level of enrollment, it returns the expected class size as given by Maimonides' Rule
+# A discontinuity sample +/- X contains only schools with enrollment levels within +/- X of the thresholds for new class creation (40, 80, 120, 160, etc.). It checks the sensitivity/accuracy of the estimate by looking at the edge cases
+
+library('lmtest')
+library('multiwayvcov')
+library('sandwich')
+library('texreg')
+
+### CREATING THE E(CLASS SIZE | ENROLLMENT) FUNCTION
+expected_classize <- function(enrollment) {
+	y <- c()
+	for (i in 1:length(enrollment)) {
+		denominator <- as.integer((enrollment[i] - 1) / 40) + 1
+		y[i] <- enrollment[i] / denominator
+	}
+	y
+}
+
+### CREATING THE DISCONTINUITY SAMPLE:
+	# note: enrollment = c_size in our data
+discontinuity5_5th <- subset(data5, data5$c_size>=36 & data5$c_size<=45 | data5$c_size>=76 & data5$c_size<=85 | data5$c_size>=116 & data5$c_size<=125)
+discontinuity5_4th <- subset(data4, data4$c_size>=36 & data4$c_size<=45 | data4$c_size>=76 & data4$c_size<=85 | data4$c_size>=116 & data4$c_size<=125)
+
+discontinuity3_5th <- subset(data5, data5$c_size>=38 & data5$c_size<=43 | data5$c_size>=78 & data5$c_size<=83 | data5$c_size>=118 & data5$c_size<=123)
+discontinuity3_4th <- subset(data4, data4$c_size>=38 & data4$c_size<=43 | data4$c_size>=78 & data4$c_size<=83 | data4$c_size>=118 & data4$c_size<=123)
+	# note: the discontinuity around the thresholds at +/- 3 will be used in a later table
+
+
+### ADDING E(CLASS SIZE | ENROLLMENT) TO SAMPLES
+data5$exp_classize <- expected_classize(data5$c_size)
+data4$exp_classize <- expected_classize(data4$c_size)
+discontinuity5_5th$exp_classize <- expected_classize(discontinuity5_5th$c_size)
+discontinuity5_4th$exp_classize <- expected_classize(discontinuity5_4th$c_size)
+
+
+### CREATING THE REGRESSION MODELS
+table3_fullsample_col1_model <- lm(data5$classize ~ data5$exp_classize + data5$tipuach)
+table3_fullsample_col2_model <- lm(data5$classize ~ data5$exp_classize + data5$tipuach + data5$c_size)
+table3_fullsample_col3_model <- lm(data5$avgverb ~ data5$exp_classize + data5$tipuach)
+table3_fullsample_col4_model <- lm(data5$avgverb ~ data5$exp_classize + data5$tipuach + data5$c_size)
+table3_fullsample_col5_model <- lm(data5$avgmath ~ data5$exp_classize + data5$tipuach)
+table3_fullsample_col6_model <- lm(data5$avgmath ~ data5$exp_classize + data5$tipuach + data5$c_size)
+
+table3_fullsample_col7_model <- lm(data4$classize ~ data4$exp_classize + data4$tipuach)
+table3_fullsample_col8_model <- lm(data4$classize ~ data4$exp_classize + data4$tipuach + data4$c_size)
+table3_fullsample_col9_model <- lm(data4$avgverb ~ data4$exp_classize + data4$tipuach)
+table3_fullsample_col10_model <- lm(data4$avgverb ~ data4$exp_classize + data4$tipuach + data4$c_size)
+table3_fullsample_col11_model <- lm(data4$avgmath ~ data4$exp_classize + data4$tipuach)
+table3_fullsample_col12_model <- lm(data4$avgmath ~ data4$exp_classize + data4$tipuach + data4$c_size)
+
+table3_discontinuoussample_col1_model <- lm(discontinuity5_5th$classize ~ discontinuity5_5th$exp_classize + discontinuity5_5th$tipuach)
+table3_discontinuoussample_col2_model <- lm(discontinuity5_5th$classize ~ discontinuity5_5th$exp_classize + discontinuity5_5th$tipuach + discontinuity5_5th$c_size)
+table3_discontinuoussample_col3_model <- lm(discontinuity5_5th$avgverb ~ discontinuity5_5th$exp_classize + discontinuity5_5th$tipuach)
+table3_discontinuoussample_col4_model <- lm(discontinuity5_5th$avgverb ~ discontinuity5_5th$exp_classize + discontinuity5_5th$tipuach + discontinuity5_5th$c_size)
+table3_discontinuoussample_col5_model <- lm(discontinuity5_5th$avgmath ~ discontinuity5_5th$exp_classize + discontinuity5_5th$tipuach)
+table3_discontinuoussample_col6_model <- lm(discontinuity5_5th$avgmath ~ discontinuity5_5th$exp_classize + discontinuity5_5th$tipuach + discontinuity5_5th$c_size)
+
+table3_discontinuoussample_col7_model <- lm(discontinuity5_4th$classize ~ discontinuity5_4th$exp_classize + discontinuity5_4th$tipuach)
+table3_discontinuoussample_col8_model <- lm(discontinuity5_4th$classize ~ discontinuity5_4th$exp_classize + discontinuity5_4th$tipuach + discontinuity5_4th$c_size)
+table3_discontinuoussample_col9_model <- lm(discontinuity5_4th$avgverb ~ discontinuity5_4th$exp_classize + discontinuity5_4th$tipuach)
+table3_discontinuoussample_col10_model <- lm(discontinuity5_4th$avgverb ~ discontinuity5_4th$exp_classize + discontinuity5_4th$tipuach + discontinuity5_4th$c_size)
+table3_discontinuoussample_col11_model <- lm(discontinuity5_4th$avgmath ~ discontinuity5_4th$exp_classize + discontinuity5_4th$tipuach)
+table3_discontinuoussample_col12_model <- lm(discontinuity5_4th$avgmath ~ discontinuity5_4th$exp_classize + discontinuity5_4th$tipuach + discontinuity5_4th$c_size)
+
+
+### CREATING THE VARIABLES TO REPLACE DEFAULT STANDARD ERRORS
+table3_fullsample_col1_se <- robust.se(table3_fullsample_col1_model, data5$schlcode)[[2]]
+table3_fullsample_col2_se <- robust.se(table3_fullsample_col2_model, data5$schlcode)[[2]]
+table3_fullsample_col3_se <- robust.se(table3_fullsample_col3_model, data5$schlcode)[[2]]
+table3_fullsample_col4_se <- robust.se(table3_fullsample_col4_model, data5$schlcode)[[2]]
+table3_fullsample_col5_se <- robust.se(table3_fullsample_col5_model, data5$schlcode)[[2]]
+table3_fullsample_col6_se <- robust.se(table3_fullsample_col6_model, data5$schlcode)[[2]]
+
+table3_fullsample_col7_se <- robust.se(table3_fullsample_col7_model, data4$schlcode)[[2]]
+table3_fullsample_col8_se <- robust.se(table3_fullsample_col8_model, data4$schlcode)[[2]]
+table3_fullsample_col9_se <- robust.se(table3_fullsample_col9_model, data4$schlcode)[[2]]
+table3_fullsample_col10_se <- robust.se(table3_fullsample_col10_model, data4$schlcode)[[2]]
+table3_fullsample_col11_se <- robust.se(table3_fullsample_col11_model, data4$schlcode)[[2]]
+table3_fullsample_col12_se <- robust.se(table3_fullsample_col12_model, data4$schlcode)[[2]]
+
+table3_discontinuoussample_col1_se <- robust.se(table3_discontinuoussample_col1_model, discontinuity5_5th$schlcode)[[2]]
+table3_discontinuoussample_col2_se <- robust.se(table3_discontinuoussample_col2_model, discontinuity5_5th$schlcode)[[2]]
+table3_discontinuoussample_col3_se <- robust.se(table3_discontinuoussample_col3_model, discontinuity5_5th$schlcode)[[2]]
+table3_discontinuoussample_col4_se <- robust.se(table3_discontinuoussample_col4_model, discontinuity5_5th$schlcode)[[2]]
+table3_discontinuoussample_col5_se <- robust.se(table3_discontinuoussample_col5_model, discontinuity5_5th$schlcode)[[2]]
+table3_discontinuoussample_col6_se <- robust.se(table3_discontinuoussample_col6_model, discontinuity5_5th$schlcode)[[2]]
+
+table3_discontinuoussample_col7_se <- robust.se(table3_discontinuoussample_col7_model, discontinuity5_4th$schlcode)[[2]]
+table3_discontinuoussample_col8_se <- robust.se(table3_discontinuoussample_col8_model, discontinuity5_4th$schlcode)[[2]]
+table3_discontinuoussample_col9_se <- robust.se(table3_discontinuoussample_col9_model, discontinuity5_4th$schlcode)[[2]]
+table3_discontinuoussample_col10_se <- robust.se(table3_discontinuoussample_col10_model, discontinuity5_4th$schlcode)[[2]]
+table3_discontinuoussample_col11_se <- robust.se(table3_discontinuoussample_col11_model, discontinuity5_4th$schlcode)[[2]]
+table3_discontinuoussample_col12_se <- robust.se(table3_discontinuoussample_col12_model, discontinuity5_4th$schlcode)[[2]]
+
+
+### CREATING THE GRAPHIC REPRESENTATION
+TableIII_fullsample_5th <- texreg(list(table3_fullsample_col1_model, table3_fullsample_col2_model, table3_fullsample_col3_model, table3_fullsample_col4_model, table3_fullsample_col5_model, table3_fullsample_col6_model),
+        table = TRUE,
+        caption.above = TRUE,
+        caption ="Reduced-Form Estimates for 1991 5th Grade Full Sample",
+        custom.note="rc := reading comprehension, m := math",
+        custom.coef.names = c(NA, "Expected Class Size", "Percent Disadvantaged", "Enrollment"),
+       leading.zero = FALSE,
+       digits = 3,
+       stars = numeric(0),
+       dcolumn = FALSE,
+       custom.model.names=c("cs5.1","cs5.2","rc5.1","rc5.2","m5.1","m5.2"),
+       override.se=list(table3_fullsample_col1_se[,2],
+                        table3_fullsample_col2_se[,2],
+                        table3_fullsample_col3_se[,2],
+                        table3_fullsample_col4_se[,2],
+                        table3_fullsample_col5_se[,2],
+                        table3_fullsample_col6_se[,2]),
+       override.pval=list(table3_fullsample_col1_se[,4],
+                        table3_fullsample_col2_se[,4],
+                        table3_fullsample_col3_se[,4],
+                        table3_fullsample_col4_se[,4],
+                        table3_fullsample_col5_se[,4],
+                        table3_fullsample_col6_se[,4]),
+       omit.coef = 'Intercept')
+
+print(TableIII_fullsample_5th)
+
+TableIII_fullsample_4th <- texreg(list(table3_fullsample_col7_model, table3_fullsample_col8_model, table3_fullsample_col9_model, table3_fullsample_col10_model, table3_fullsample_col11_model, table3_fullsample_col12_model),
+      table = TRUE,
+        caption.above = TRUE,
+        caption ="Reduced-Form Estimates for 1991 4th Grade Full Sample",
+        custom.note="rc := reading comprehension, m := math",
+        custom.coef.names = c(NA, "Expected Class Size", "Percent Disadvantaged", "Enrollment"),
+       leading.zero = FALSE,
+       digits = 3,
+       stars = numeric(0),
+       dcolumn = FALSE,
+       custom.model.names=c("cs5.1","cs5.2","rc5.1","rc5.2","m5.1","m5.2"),
+       override.se=list(table3_fullsample_col7_se[,2],
+                        table3_fullsample_col8_se[,2],
+                        table3_fullsample_col9_se[,2],
+                        table3_fullsample_col10_se[,2],
+                        table3_fullsample_col11_se[,2],
+                        table3_fullsample_col12_se[,2]),
+       override.pval=list(table3_fullsample_col7_se[,4],
+                        table3_fullsample_col8_se[,4],
+                        table3_fullsample_col9_se[,4],
+                        table3_fullsample_col10_se[,4],
+                        table3_fullsample_col11_se[,4],
+                        table3_fullsample_col12_se[,4]),
+       omit.coef = 'Intercept')
+print(TableIII_fullsample_4th)
+
+TableIII_discontinuoussample_5th <- texreg(list(table3_discontinuoussample_col1_model, table3_discontinuoussample_col2_model, table3_discontinuoussample_col3_model, table3_discontinuoussample_col4_model, table3_discontinuoussample_col5_model, table3_discontinuoussample_col6_model),
+       table = TRUE,
+        caption.above = TRUE,
+        caption ="Reduced-Form Estimates for 1991 5th Grade Discontinuity Sample",
+        custom.note="rc := reading comprehension, m := math",
+        custom.coef.names = c(NA, "Expected Class Size", "Percent Disadvantaged", "Enrollment"),
+       leading.zero = FALSE,
+       digits = 3,
+       stars = numeric(0),
+       dcolumn = FALSE,
+       custom.model.names=c("cs5.1","cs5.2","rc5.1","rc5.2","m5.1","m5.2"),
+       override.se=list(table3_discontinuoussample_col1_se[,2],
+                        table3_discontinuoussample_col2_se[,2],
+                        table3_discontinuoussample_col3_se[,2],
+                        table3_discontinuoussample_col4_se[,2],
+                        table3_discontinuoussample_col5_se[,2],
+                        table3_discontinuoussample_col6_se[,2]),
+       override.pval=list(table3_discontinuoussample_col1_se[,4],
+                        table3_discontinuoussample_col2_se[,4],
+                        table3_discontinuoussample_col3_se[,4],
+                        table3_discontinuoussample_col4_se[,4],
+                        table3_discontinuoussample_col5_se[,4],
+                        table3_discontinuoussample_col6_se[,4]),
+       omit.coef = 'Intercept')
+print(TableIII_discontinuoussample_5th)
+
+TableIII_discontinuoussample_4th <- texreg(list(table3_discontinuoussample_col7_model, table3_discontinuoussample_col8_model, table3_discontinuoussample_col9_model, table3_discontinuoussample_col10_model, table3_discontinuoussample_col11_model, table3_discontinuoussample_col12_model),
+       table = TRUE,
+        caption.above = TRUE,
+        caption ="Reduced-Form Estimates for 1991 4th Grade Discontinuity Sample",
+        custom.note="rc := reading comprehension, m := math",
+        custom.coef.names = c(NA, "Expected Class Size", "Percent Disadvantaged", "Enrollment"),
+       leading.zero = FALSE,
+       digits = 3,
+       stars = numeric(0),
+       dcolumn = FALSE,
+       custom.model.names=c("cs5.1","cs5.2","rc5.1","rc5.2","m5.1","m5.2"),
+       override.se=list(table3_discontinuoussample_col7_se[,2],
+                        table3_discontinuoussample_col8_se[,2],
+                        table3_discontinuoussample_col9_se[,2],
+                        table3_discontinuoussample_col10_se[,2],
+                        table3_discontinuoussample_col11_se[,2],
+                        table3_discontinuoussample_col12_se[,2]),
+       override.pval=list(table3_discontinuoussample_col7_se[,4],
+                        table3_discontinuoussample_col8_se[,4],
+                        table3_discontinuoussample_col9_se[,4],
+                        table3_discontinuoussample_col10_se[,4],
+                        table3_discontinuoussample_col11_se[,4],
+                        table3_discontinuoussample_col12_se[,4]),
+       omit.coef = 'Intercept')
+print(TableIII_discontinuoussample_4th)
+
+```
+
+# TABLE IV
+## 2SLS Estimates for 1991 (5th Graders)
+
+These models use the expected class size defined in the last model as an instrumental variable for class size, and defines a trend variable with slopes identical to the slope of the expected class size function's linear segments. This trend tests whether the discontinuity generating instrumental variable (expected class size) is adequately controlled for. The presence of strong negative coeffecients on class size in both the full and discontinuous samples suggests causality (due to the IV and Discontinuous characteristics) and imply that there is causal relationship between class size increasing and test scores decreasing.
+
+```{r}
+
+### REGRESSION INFO
+# The `tipuach` variable is PD (percent disadvantaged) which is one of the main control variables
+# The `schlcode` variable is the variable we are clustering by because we are clustering to correct the SE's for intraschool correlations (similarities of classes within the same school)
+# The f_sc function in the paper is defined by f_sc = enrollment / (integer[(enrollment - 1) / 40) + 1] for a specified level of enrollment, it returns the expected class size as given by Maimonides' Rule
+# A discontinuity sample +/- X contains only schools with enrollment levels within +/- X of the thresholds for new class creation (40, 80, 120, 160, etc.). It checks the sensitivity/accuracy of the estimate by looking at the edge cases
+# All models use f_sc := E(class size | enrollment) as an instrument for class size
+# In this table a variable for trend is included with slopes identical to the slope of f_sc on it's linear segments. This trend should test whether ctrols for effects of discontinuity generating Maimonides' Rule is aduately controlled 
+
+library('lmtest')
+library('multiwayvcov')
+library('sandwich')
+library('texreg')
+library('AER')
+
+### CREATING THE TREND
+trend_2sls <- function(enrollment) {
+	y <- c()
+	for (i in 1:length(enrollment)) {
+		if (enrollment[i] >= 0 & enrollment[i] <= 40) {
+			y[i] <- enrollment[i]
+		}
+		else if (enrollment[i] >= 41 & enrollment[i] <= 80) {
+			y[i] <- (20 + enrollment[i]/2)
+		}
+		else if (enrollment[i] >= 81 & enrollment[i] <= 120) {
+			y[i] <- (100/3 + enrollment[i]/3)
+		}
+		else if (enrollment[i] >= 121 & enrollment[i] <= 160) {
+			y[i] <- (130/3 + enrollment[i]/4)
+		}
+	}
+	y
+}
+
+### CREATING ENROLLMENT^2/100
+data5$c_size_table4_manipulation <- ((data5$c_size)^2)/100
+
+### ADDING THE TREND TO SAMPLES
+data5$trend <- trend_2sls(data5$c_size)
+
+
+### CREATING THE REGRESSION MODELS
+table4_fullsample_col1_model <- ivreg(data5$avgverb ~ data5$classize + data5$tipuach | data5$exp_classize + data5$tipuach)
+table4_fullsample_col2_model <- ivreg(data5$avgverb ~ data5$classize + data5$tipuach + data5$c_size | data5$exp_classize + data5$tipuach + data5$c_size)
+table4_fullsample_col3_model <- ivreg(data5$avgverb ~ data5$classize + data5$tipuach + data5$c_size + data5$c_size_table4_manipulation | data5$exp_classize + data5$tipuach + data5$c_size + data5$c_size_table4_manipulation)
+
+data5_FixedForTrend <- subset(data5, is.na(data5$trend) == FALSE)
+table4_fullsample_col4_model <- ivreg(data5_FixedForTrend$avgverb ~ data5_FixedForTrend$classize + data5_FixedForTrend$trend | data5_FixedForTrend$exp_classize + data5_FixedForTrend$trend)
+
+table4_fullsample_col5_model <- ivreg(data5$avgmath ~ data5$classize + data5$tipuach | data5$exp_classize + data5$tipuach)
+table4_fullsample_col6_model <- ivreg(data5$avgmath ~ data5$classize + data5$tipuach + data5$c_size | data5$exp_classize + data5$tipuach + data5$c_size)
+table4_fullsample_col7_model <- ivreg(data5$avgmath ~ data5$classize + data5$tipuach + data5$c_size + data5$c_size_table4_manipulation | data5$exp_classize + data5$tipuach + data5$c_size + data5$c_size_table4_manipulation)
+
+table4_fullsample_col8_model <- ivreg(data5_FixedForTrend$avgmath ~ data5_FixedForTrend$classize + data5_FixedForTrend$trend | data5_FixedForTrend$exp_classize + data5_FixedForTrend$trend)
+
+table4_discontinuoussample_col1_model <- ivreg(discontinuity5_5th$avgverb ~ discontinuity5_5th$classize + discontinuity5_5th$tipuach | discontinuity5_5th$exp_classize + discontinuity5_5th$tipuach)
+table4_discontinuoussample_col2_model <- ivreg(discontinuity5_5th$avgverb ~ discontinuity5_5th$classize + discontinuity5_5th$tipuach + discontinuity5_5th$c_size | discontinuity5_5th$exp_classize + discontinuity5_5th$tipuach + discontinuity5_5th$c_size)
+table4_discontinuoussample_col3_model <- ivreg(discontinuity5_5th$avgmath ~ discontinuity5_5th$classize + discontinuity5_5th$tipuach | discontinuity5_5th$exp_classize + discontinuity5_5th$tipuach)
+table4_discontinuoussample_col4_model <- ivreg(discontinuity5_5th$avgmath ~ discontinuity5_5th$classize + discontinuity5_5th$tipuach + discontinuity5_5th$c_size | discontinuity5_5th$exp_classize + discontinuity5_5th$tipuach + discontinuity5_5th$c_size)
+
+#### CREATING THE VARIABLES TO REPLACE DEFAULT STANDARD ERRORS
+table4_fullsample_col1_se <- robust.se(table4_fullsample_col1_model, data5$schlcode)[[2]]
+table4_fullsample_col2_se <- robust.se(table4_fullsample_col2_model, data5$schlcode)[[2]]
+table4_fullsample_col3_se <- robust.se(table4_fullsample_col3_model, data5$schlcode)[[2]]
+
+table4_fullsample_col4_se <- robust.se(table4_fullsample_col4_model, data5_FixedForTrend$schlcode)[[2]]
+
+table4_fullsample_col5_se <- robust.se(table4_fullsample_col5_model, data5$schlcode)[[2]]
+table4_fullsample_col6_se <- robust.se(table4_fullsample_col6_model, data5$schlcode)[[2]]
+table4_fullsample_col7_se <- robust.se(table4_fullsample_col7_model, data5$schlcode)[[2]]
+
+table4_fullsample_col8_se <- robust.se(table4_fullsample_col8_model, data5_FixedForTrend$schlcode)[[2]]
+
+table4_discontinuoussample_col1_se <- robust.se(table4_discontinuoussample_col1_model, discontinuity5_5th$schlcode)[[2]]
+table4_discontinuoussample_col2_se <- robust.se(table4_discontinuoussample_col2_model, discontinuity5_5th$schlcode)[[2]]
+table4_discontinuoussample_col3_se <- robust.se(table4_discontinuoussample_col3_model, discontinuity5_5th$schlcode)[[2]]
+table4_discontinuoussample_col4_se <- robust.se(table4_discontinuoussample_col4_model, discontinuity5_5th$schlcode)[[2]]
+
+### CREATING THE GRAPHIC REPRESENTATION
+TableIV_fullsample_5th <- texreg(list(table4_fullsample_col1_model, table4_fullsample_col2_model, table4_fullsample_col3_model, table4_fullsample_col4_model, table4_fullsample_col5_model, table4_fullsample_col6_model, table4_fullsample_col7_model, table4_fullsample_col8_model),
+      table = TRUE,
+        caption.above = TRUE,
+        caption ="2SLS Estimates for 1991 5th Grade Full Sample",
+        custom.note="rc := reading comprehension, m := math",
+        custom.coef.names = c("omit", "Class Size", "Percent Disadvantaged", "Enrollment", "Enrollment squared/100", "omit", "Trend"),
+       leading.zero = FALSE,
+       digits = 3,
+       stars = numeric(0),
+       dcolumn = FALSE,
+       custom.model.names=c("rc5.1","rc5.2", "rc5.3", "rc5.4" ,"m5.1","m5.2", "m5.3", "m5.4"),            
+       override.se=list(table4_fullsample_col1_se[,2],
+                        table4_fullsample_col2_se[,2],
+                        table4_fullsample_col3_se[,2],
+                        table4_fullsample_col4_se[,2],
+                        table4_fullsample_col5_se[,2],
+                        table4_fullsample_col6_se[,2],
+                        table4_fullsample_col7_se[,2],
+                        table4_fullsample_col8_se[,2]),
+       override.pval=list(table4_fullsample_col1_se[,4],
+                        table4_fullsample_col2_se[,4],
+                        table4_fullsample_col3_se[,4],
+                        table4_fullsample_col4_se[,4],
+                        table4_fullsample_col5_se[,4],
+                        table4_fullsample_col6_se[,4],
+                        table4_fullsample_col7_se[,4],
+                        table4_fullsample_col8_se[,4]),
+      omit.coef = "omit")
+print(TableIV_fullsample_5th)
+
+TableIV_discontinuoussample_5th <- texreg(list(table4_discontinuoussample_col1_model, table4_discontinuoussample_col2_model, table4_discontinuoussample_col3_model, table4_discontinuoussample_col4_model),
+         table = TRUE,
+        caption.above = TRUE,
+        caption ="2SLS Estimates for 1991 5th Grade Discontinuous Sample",
+        custom.note="rc := reading comprehension, m := math",
+        custom.coef.names = c("omit", "Class Size", "Percent Disadvantaged", "Enrollment"),
+       leading.zero = FALSE,
+       digits = 3,
+       stars = numeric(0),
+       dcolumn = FALSE,
+       custom.model.names=c("rc5.1","rc5.2", "m5.1","m5.2"),
+       override.se=list(table4_discontinuoussample_col1_se[,2],
+                        table4_discontinuoussample_col2_se[,2],
+                        table4_discontinuoussample_col3_se[,2],
+                        table4_discontinuoussample_col4_se[,2]),
+       override.pval=list(table4_discontinuoussample_col1_se[,4],
+                        table4_discontinuoussample_col2_se[,4],
+                        table4_discontinuoussample_col3_se[,4],
+                        table4_discontinuoussample_col4_se[,4],
+                        table4_fullsample_col5_se[,4]),
+       omit.coef = "omit")
+print(TableIV_discontinuoussample_5th)
+
+
+```
+
+# TABLE V
+## 2SLS Estimates for 1991 (4th Graders)
+
+This table applies the same models used in Table IV on 5th graders, to the data for 4th graders.
+
+```{r}
+
+### REGRESSION INFO
+# The `tipuach` variable is PD (percent disadvantaged) which is one of the main control variables
+# The `schlcode` variable is the variable we are clustering by because we are clustering to correct the SE's for intraschool correlations (similarities of classes within the same school)
+# The f_sc function in the paper is defined by f_sc = enrollment / (integer[(enrollment - 1) / 40) + 1] for a specified level of enrollment, it returns the expected class size as given by Maimonides' Rule
+# A discontinuity sample +/- X contains only schools with enrollment levels within +/- X of the thresholds for new class creation (40, 80, 120, 160, etc.). It checks the sensitivity/accuracy of the estimate by looking at the edge cases
+# All models use f_sc := E(class size | enrollment) as an instrument for class size
+# In this table a variable for trend is included with slopes identical to the slope of f_sc on it's linear segments. This trend should test whether ctrols for effects of discontinuity generating Maimonides' Rule is aduately controlled 
+
+library('lmtest')
+library('multiwayvcov')
+library('sandwich')
+library('texreg')
+library('AER')
+
+
+### CREATING ENROLLMENT^2/100
+data4$c_size_table5_manipulation <- ((data4$c_size)^2)/100
+
+### ADDING THE TREND TO SAMPLES
+data4$trend <- trend_2sls(data4$c_size)
+
+### CREATING THE REGRESSION MODELS
+table5_fullsample_col1_model <- ivreg(data4$avgverb ~ data4$classize + data4$tipuach | data4$exp_classize + data4$tipuach)
+table5_fullsample_col2_model <- ivreg(data4$avgverb ~ data4$classize + data4$tipuach + data4$c_size | data4$exp_classize + data4$tipuach + data4$c_size)
+table5_fullsample_col3_model <- ivreg(data4$avgverb ~ data4$classize + data4$tipuach + data4$c_size + data4$c_size_table5_manipulation | data4$exp_classize + data4$tipuach + data4$c_size + data4$c_size_table5_manipulation)
+
+data4_FixedForTrend <- subset(data4, is.na(data4$trend) == FALSE)
+
+table5_fullsample_col4_model <- ivreg(data4_FixedForTrend$avgverb ~ data4_FixedForTrend$classize + data4_FixedForTrend$trend | data4_FixedForTrend$exp_classize+ data4_FixedForTrend$trend)
+
+table5_fullsample_col5_model <- ivreg(data4$avgmath ~ data4$classize + data4$tipuach | data4$exp_classize+ data4$tipuach)
+table5_fullsample_col6_model <- ivreg(data4$avgmath ~ data4$classize + data4$tipuach + data4$c_size | data4$exp_classize+ data4$tipuach + data4$c_size)
+table5_fullsample_col7_model <- ivreg(data4$avgmath ~ data4$classize + data4$tipuach + data4$c_size + data4$c_size_table5_manipulation | data4$exp_classize+ data4$tipuach + data4$c_size + data4$c_size_table5_manipulation)
+
+table5_fullsample_col8_model <- ivreg(data4_FixedForTrend$avgmath ~ data4_FixedForTrend$classize + data4_FixedForTrend$trend | data4_FixedForTrend$exp_classize + data4_FixedForTrend$trend)
+
+table5_discontinuoussample_col1_model <- ivreg(discontinuity5_4th$avgverb ~ discontinuity5_4th$classize + discontinuity5_4th$tipuach | discontinuity5_4th$exp_classize + discontinuity5_4th$tipuach)
+table5_discontinuoussample_col2_model <- ivreg(discontinuity5_4th$avgverb ~ discontinuity5_4th$classize + discontinuity5_4th$tipuach + discontinuity5_4th$c_size | discontinuity5_4th$exp_classize + discontinuity5_4th$tipuach + discontinuity5_4th$c_size)
+table5_discontinuoussample_col3_model <- ivreg(discontinuity5_4th$avgmath ~ discontinuity5_4th$classize + discontinuity5_4th$tipuach | discontinuity5_4th$exp_classize + discontinuity5_4th$tipuach)
+table5_discontinuoussample_col4_model <- ivreg(discontinuity5_4th$avgmath ~ discontinuity5_4th$classize + discontinuity5_4th$tipuach + discontinuity5_4th$c_size | discontinuity5_4th$exp_classize + discontinuity5_4th$tipuach + discontinuity5_4th$c_size)
+
+#### CREATING THE VARIABLES TO REPLACE DEFAULT STANDARD ERRORS
+table5_fullsample_col1_se <- robust.se(table5_fullsample_col1_model, data4$schlcode)[[2]]
+table5_fullsample_col2_se <- robust.se(table5_fullsample_col2_model, data4$schlcode)[[2]]
+table5_fullsample_col3_se <- robust.se(table5_fullsample_col3_model, data4$schlcode)[[2]]
+
+table5_fullsample_col4_se <- robust.se(table5_fullsample_col4_model, data4_FixedForTrend$schlcode)[[2]]
+
+table5_fullsample_col5_se <- robust.se(table5_fullsample_col5_model, data4$schlcode)[[2]]
+table5_fullsample_col6_se <- robust.se(table5_fullsample_col6_model, data4$schlcode)[[2]]
+table5_fullsample_col7_se <- robust.se(table5_fullsample_col7_model, data4$schlcode)[[2]]
+
+table5_fullsample_col8_se <- robust.se(table5_fullsample_col8_model, data4_FixedForTrend$schlcode)[[2]]
+
+table5_discontinuoussample_col1_se <- robust.se(table5_discontinuoussample_col1_model, discontinuity5_4th$schlcode)[[2]]
+table5_discontinuoussample_col2_se <- robust.se(table5_discontinuoussample_col2_model, discontinuity5_4th$schlcode)[[2]]
+table5_discontinuoussample_col1_se <- robust.se(table5_discontinuoussample_col1_model, discontinuity5_4th$schlcode)[[2]]
+table5_discontinuoussample_col2_se <- robust.se(table5_discontinuoussample_col2_model, discontinuity5_4th$schlcode)[[2]]
+
+### CREATING THE GRAPHIC REPRESENTATION
+TableV_fullsample_4th <- texreg(list(table5_fullsample_col1_model, table5_fullsample_col2_model, table5_fullsample_col3_model, table5_fullsample_col4_model, table5_fullsample_col5_model, table5_fullsample_col6_model, table5_fullsample_col7_model, table5_fullsample_col8_model),
+       table = TRUE,
+        caption.above = TRUE,
+        caption ="2SLS Estimates for 1991 4th Grade Full Sample",
+        custom.note="rc := reading comprehension, m := math",
+        custom.coef.names = c("omit", "Class Size", "Percent Disadvantaged", "Enrollment", "Enrollment squared/100", "omit", "Trend"),
+       leading.zero = FALSE,
+       digits = 3,
+       stars = numeric(0),
+       dcolumn = FALSE,
+       custom.model.names=c("rc5.1","rc5.2", "rc5.3", "rc5.4" ,"m5.1","m5.2", "m5.3", "m5.4"), 
+       override.se=list(table5_fullsample_col1_se[,2],
+                        table5_fullsample_col2_se[,2],
+                        table5_fullsample_col3_se[,2],
+                        table5_fullsample_col4_se[,2],
+                        table5_fullsample_col5_se[,2],
+                        table5_fullsample_col6_se[,2],
+                        table5_fullsample_col7_se[,2],
+                        table5_fullsample_col8_se[,2]),
+       override.pval=list(table5_fullsample_col1_se[,4],
+                        table5_fullsample_col2_se[,4],
+                        table5_fullsample_col3_se[,4],
+                        table5_fullsample_col4_se[,4],
+                        table5_fullsample_col5_se[,4],
+                        table5_fullsample_col6_se[,4],
+                        table5_fullsample_col7_se[,4],
+                        table5_fullsample_col8_se[,4]),
+       omit.coef = 'omit')
+print(TableV_fullsample_4th)
+
+TableV_discontinuoussample_4th <- texreg(list(table5_discontinuoussample_col1_model, table5_discontinuoussample_col2_model, table5_discontinuoussample_col3_model, table5_discontinuoussample_col4_model),
+       table = TRUE,
+        caption.above = TRUE,
+        caption ="2SLS Estimates for 1991 4th Grade Discontinuous Sample",
+        custom.note="rc := reading comprehension, m := math",
+        custom.coef.names = c("omit", "Class Size", "Percent Disadvantaged", "Enrollment"),
+       leading.zero = FALSE,
+       digits = 3,
+       stars = numeric(0),
+       dcolumn = FALSE,
+       custom.model.names=c("rc5.1","rc5.2", "m5.1","m5.2"),
+       override.se=list(table5_discontinuoussample_col1_se[,2],
+                        table5_discontinuoussample_col2_se[,2],
+                        table5_discontinuoussample_col1_se[,2],
+                        table5_discontinuoussample_col2_se[,2]),
+       override.pval=list(table5_discontinuoussample_col1_se[,4],
+                        table5_discontinuoussample_col2_se[,4],
+                        table5_discontinuoussample_col1_se[,4],
+                        table5_discontinuoussample_col2_se[,4],
+                        table5_fullsample_col5_se[,4]),
+       omit.coef = 'omit')
+
+print(TableV_discontinuoussample_4th)
+
+```
+
+# TABLES VI - VII
+
+We did not include these tables due to time restrictions and strange results when using indicator instrumental variables with `ivreg()`. If you are interested in the code (we attempted to reproduce the results but could not finish these models accurately) please email ntadelis@berkeley.edu
+
+## CONCLUSION
+
+This project is in our minds successful. We have gained a much deeper understand of R's statistical analysis tools, and the versatility of CRAN's compendium of packages. Additionally our results were within rounding errors of Angrist and Lavy's regression results, suggesting that any differences between Stata and R are so small that when regression models are run correctly they are all but eliminated. 
