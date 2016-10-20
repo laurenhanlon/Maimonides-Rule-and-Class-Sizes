@@ -12,8 +12,9 @@ We came into this project with the goal of developing our statistical analysis s
 The abstract of paper:  
 
 >"The twelfth century rabbinic scholar Maimonides proposed a maximum class size of 40. This same maximum induces a nonlinear and nonmonotonic relation- ship between grade enrollment and class size in Israeli public schools today. Maimonides’ rule of 40 is used here to construct instrumental variables estimates of effects of class size on test scores. The resulting identification strategy can be viewed as an application of Donald Campbell’s regression-discontinuity design to the class-size question. The estimates show that reducing class size induces a significant and substantial increase in test scores for fourth and fifth graders, although not for third graders." (Angrist, Lavy, 1999)  
->  
+
 We attempted to show, using several different regressions, whether a significant effect of class size reduction could be shown for increasing test scores. We included several tables and graphs similar to the ones in Angrist and Lavy's paper to show our analysis. 
+
 ### Project Organization:  
 We created a R.proj file titled "stat133final". The skeleton.R file contains the code to download the raw data, and to create subdirectories. Subdirectories include:
 
