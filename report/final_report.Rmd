@@ -4,11 +4,11 @@ author: "Lauren Hanlon, Nadav Tadelis, Daniel Saedi"
 output: pdf_document
 ---
 
-```{r}
-knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r packages}
+```{r packages, echo=FALSE}
 
 # Required packages for this section
 
@@ -19,16 +19,13 @@ library('texreg')
 library('lmtest')
 library('sandwich')
 library('AER')
+library('ggplot2')
 
 ```
 
 ```{r, echo = FALSE}
-
-dir <- "../data/"
-setwd(dir)
-
-data4 <- read.csv("final4.csv", header = TRUE)
-data5 <- read.csv("final5.csv", header = TRUE)
+data4 <- read.csv("../data/final4.csv", header = TRUE)
+data5 <- read.csv("../data/final5.csv", header = TRUE)
 
 data4 <- data4[-(1:2)]
 data5 <- data5[-(1:2)]
@@ -69,9 +66,7 @@ The table gives data on class size, enrollment, percent disadvantaged, reading s
 
 ### A. Full Sample
 
-```{r, echo = FALSE}
-
-library('stargazer')
+```{r results='asis', echo=FALSE}
 
 # subset important/relevant data
 
@@ -85,10 +80,9 @@ subset_data4 <- data4[c("classize", "c_size", "tip_a", "verbsize", "mathsize",
 summary_statistics <- function(data, grade){
   classes <- nrow(data)
   schools <- length(unique(data$schlcode))
-  stargazer(data, nobs = FALSE, mean.sd = TRUE, iqr = TRUE, type = "latex",
+  stargazer(data, nobs = FALSE, mean.sd = TRUE, iqr = TRUE, type = "latex", header=FALSE,
           median = TRUE, title = paste("Unweighted Descriptive Statistics for", grade, "Grade: ", classes, " classes, ", schools, " schools, tested in 1991"),
-          covariate.labels = c("Class size", "Enrollment", "Percent disadvantaged", "Reading size", "Math size", "Average verbal", "Average math"))
-}
+          covariate.labels = c("Class size", "Enrollment", "Percent disadvantaged", "Reading size", "Math size", "Average verbal", "Average math"))}
 
 summary_statistics(subset_data5, "5th")
 
@@ -98,7 +92,9 @@ summary_statistics(subset_data4, "4th")
 
 ### B. +/- 5 Discontinuity Sample
 
-```{r, echo = FALSE}
+In the discontinuity sample we narrowed down the sample sizes significantly.
+
+```{r results='asis', echo=FALSE}
 
 ### CREATING THE DISCONTINUITY SAMPLE:
 
@@ -107,10 +103,7 @@ discontinuity <- function(full_sample){
 }
 
 discontinuity5 <- discontinuity(data5)
-#dim(discontinuity5)
-
 discontinuity4 <- discontinuity(data4)
-#dim(discontinuity4)
 
 # such that one of the regressors is expected_classize(enrollment) is one of the regressors
 
@@ -121,11 +114,7 @@ discontinuity3 <- function(full_sample){
 }
 
 discontinuity5_three <- discontinuity3(data5)
-#dim(discontinuity5_three)
-
 discontinuity4_three <- discontinuity3(data4)
-#dim(discontinuity4_three)
-
 ### Creating the Table
 
 discontinuity_subset_data5 <- discontinuity5[c("classize", "c_size", "tip_a", "verbsize", "mathsize",
@@ -146,10 +135,7 @@ summary_statistics(discontinuity_subset_data4, "4th")
 
 The graph we created compares average class size per enrollment category to expected enrollment according to Maimonides Rule. It shows that the class size behavior (with respect to enrollment) does approximately follow the discontinuous model of the Maimonides' Rule
 
-
-```{r, echo = FALSE}
-
-library(ggplot2)
+```{r results='asis', echo=FALSE}
 
 #Create a function to create vectors of expected class sizes according to Maiomedes rule 
 
@@ -225,7 +211,7 @@ dev.off()
 
 This is  a preliminary OLS estimate of some of the variables of interest in the data. It shows that by controlling for percent disadvantaged and total enrollment, any positive correlation between class size and test scores is eliminated, and all of the coeffecients on classize are negative. Thus suggesting that as class sizes increase, test scores decrease.
 
-```{r, echo = FALSE}
+```{r results='asis', echo=FALSE}
 
 ### REGRESSION INFO
 
@@ -234,10 +220,6 @@ This is  a preliminary OLS estimate of some of the variables of interest in the 
 # The `schlcode` variable is the variable we are clustering by because we are clustering to correct the SE's for intraschool correlations (similarities of classes within the same school)
 
 # We need to use a regression command that allows for clustering
-
-library('lmtest')
-library('multiwayvcov')
-
 # Making the regression models
 
 ### TABLE
@@ -286,10 +268,6 @@ table2_col12_model <- lm(data4$avgmath ~ data4$classize + data4$tipuach + data4$
 
 
 ### FUNCTION TO CORRECT STANDARD ERRORS FOR CLUSTERING (clustering to control for correlated intraschool error terms)
-
-library('texreg')
-library('lmtest')
-library('sandwich')
 
 robust.se <- function(model, cluster){
   require(sandwich)
@@ -383,18 +361,13 @@ print(TableII_4th)
 
 This table has two important improvements over the last table. We include a variable for expected class size, which is the class size that the Maimonides' Rule returns for a given enrollment level. Additionally we run the regressions on a discontinuous sample; the discontinous sample is made by only including the schools that have enrollment levels on the threshold of Maimonides' suggested class additions. This checks the sensitivity/accuracy of the estimates by focusing on the edge cases.
 
-```{r}
+```{r results='asis', echo=FALSE}
 
 ### REGRESSION INFO
 # The `tipuach` variable is PD (percent disadvantaged) which is one of the main control variables
 # The `schlcode` variable is the variable we are clustering by because we are clustering to correct the SE's for intraschool correlations (similarities of classes within the same school)
 # The f_sc function in the paper is defined by f_sc = enrollment / (integer[(enrollment - 1) / 40) + 1] for a specified level of enrollment, it returns the expected class size as given by Maimonides' Rule
 # A discontinuity sample +/- X contains only schools with enrollment levels within +/- X of the thresholds for new class creation (40, 80, 120, 160, etc.). It checks the sensitivity/accuracy of the estimate by looking at the edge cases
-
-library('lmtest')
-library('multiwayvcov')
-library('sandwich')
-library('texreg')
 
 ### CREATING THE E(CLASS SIZE | ENROLLMENT) FUNCTION
 expected_classize <- function(enrollment) {
@@ -596,7 +569,7 @@ print(TableIII_discontinuoussample_4th)
 
 These models use the expected class size defined in the last model as an instrumental variable for class size, and defines a trend variable with slopes identical to the slope of the expected class size function's linear segments. This trend tests whether the discontinuity generating instrumental variable (expected class size) is adequately controlled for. The presence of strong negative coeffecients on class size in both the full and discontinuous samples suggests causality (due to the IV and Discontinuous characteristics) and imply that there is causal relationship between class size increasing and test scores decreasing.
 
-```{r}
+```{r results='asis', echo=FALSE}
 
 ### REGRESSION INFO
 # The `tipuach` variable is PD (percent disadvantaged) which is one of the main control variables
@@ -605,12 +578,6 @@ These models use the expected class size defined in the last model as an instrum
 # A discontinuity sample +/- X contains only schools with enrollment levels within +/- X of the thresholds for new class creation (40, 80, 120, 160, etc.). It checks the sensitivity/accuracy of the estimate by looking at the edge cases
 # All models use f_sc := E(class size | enrollment) as an instrument for class size
 # In this table a variable for trend is included with slopes identical to the slope of f_sc on it's linear segments. This trend should test whether ctrols for effects of discontinuity generating Maimonides' Rule is aduately controlled 
-
-library('lmtest')
-library('multiwayvcov')
-library('sandwich')
-library('texreg')
-library('AER')
 
 ### CREATING THE TREND
 trend_2sls <- function(enrollment) {
@@ -738,7 +705,7 @@ print(TableIV_discontinuoussample_5th)
 
 This table applies the same models used in Table IV on 5th graders, to the data for 4th graders.
 
-```{r}
+```{r results='asis', echo=FALSE}
 
 ### REGRESSION INFO
 # The `tipuach` variable is PD (percent disadvantaged) which is one of the main control variables
@@ -747,13 +714,6 @@ This table applies the same models used in Table IV on 5th graders, to the data 
 # A discontinuity sample +/- X contains only schools with enrollment levels within +/- X of the thresholds for new class creation (40, 80, 120, 160, etc.). It checks the sensitivity/accuracy of the estimate by looking at the edge cases
 # All models use f_sc := E(class size | enrollment) as an instrument for class size
 # In this table a variable for trend is included with slopes identical to the slope of f_sc on it's linear segments. This trend should test whether ctrols for effects of discontinuity generating Maimonides' Rule is aduately controlled 
-
-library('lmtest')
-library('multiwayvcov')
-library('sandwich')
-library('texreg')
-library('AER')
-
 
 ### CREATING ENROLLMENT^2/100
 data4$c_size_table5_manipulation <- ((data4$c_size)^2)/100
